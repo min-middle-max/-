@@ -196,7 +196,7 @@
   border-radius: 18px;
   background: #fff;
   padding: 1rem;
-  min-height: calc(100vh - 2rem);
+  min-height: max(calc(100vh - 2rem), 1400px);
 }
 
 .store-header {
