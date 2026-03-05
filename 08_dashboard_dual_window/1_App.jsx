@@ -169,6 +169,7 @@ function App() {
   const [activeTopMenu, setActiveTopMenu] = useState('전체')
   const [salesByProduct, setSalesByProduct] = useState({})
   const [activeCategory, setActiveCategory] = useState('전체')
+  const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [selectedProductId, setSelectedProductId] = useState(initial.products[0]?.id ?? '')
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [qty, setQty] = useState(1)
@@ -475,6 +476,11 @@ function App() {
   }, [filteredProducts, selectedProductId])
 
   useEffect(() => {
+    if (!isDetailOpen) return
+    if (!selectedProduct) setIsDetailOpen(false)
+  }, [isDetailOpen, selectedProduct])
+
+  useEffect(() => {
     setSelectedImageIndex(0)
     setQty(1)
     setPaymentStatus(defaultPaymentStatus)
@@ -576,6 +582,7 @@ function App() {
     setPaymentStatus(defaultPaymentStatus)
     setActiveTopMenu('전체')
     setActiveCategory('전체')
+    setIsDetailOpen(false)
     setSelectedProductId(defaultProducts[0].id)
     setSelectedImageIndex(0)
     setQty(1)
@@ -961,7 +968,10 @@ function App() {
                   key={menu}
                   type="button"
                   className={menu === activeTopMenu ? 'active' : ''}
-                  onClick={() => setActiveTopMenu(menu)}
+                  onClick={() => {
+                    setActiveTopMenu(menu)
+                    setIsDetailOpen(false)
+                  }}
                 >
                   {menu}
                 </button>
@@ -1094,7 +1104,10 @@ function App() {
                 key={category}
                 type="button"
                 className={category === activeCategory ? 'active' : ''}
-                onClick={() => setActiveCategory(category)}
+                onClick={() => {
+                  setActiveCategory(category)
+                  setIsDetailOpen(false)
+                }}
               >
                 {category}
               </button>
@@ -1124,29 +1137,41 @@ function App() {
 
           {isProductMenu && (
             <>
-              <div className="products-grid">
-                {filteredProducts.map((product) => (
-                  <button
-                    key={product.id}
-                    type="button"
-                    className={`product-item ${selectedProduct?.id === product.id ? 'selected' : ''}`}
-                    onClick={() => setSelectedProductId(product.id)}
-                  >
-                    <div className="product-image-wrap">
-                      {isRecentlyAdded(product.createdAt) && <span className="new-ribbon">NEW</span>}
-                      <img src={product.image} alt={product.name} loading="lazy" />
-                    </div>
-                    <p className="name">{product.name}</p>
-                    <p className="price">{formatPrice(product.price)}</p>
-                    {activeTopMenu === '베스트' && <p className="sales">판매 {salesByProduct[product.id] ?? 0}개</p>}
-                  </button>
-                ))}
-              </div>
+              {!isDetailOpen && (
+                <>
+                  <div className="products-grid">
+                    {filteredProducts.map((product) => (
+                      <button
+                        key={product.id}
+                        type="button"
+                        className="product-item"
+                        onClick={() => {
+                          setSelectedProductId(product.id)
+                          setIsDetailOpen(true)
+                        }}
+                      >
+                        <div className="product-image-wrap">
+                          {isRecentlyAdded(product.createdAt) && <span className="new-ribbon">NEW</span>}
+                          <img src={product.image} alt={product.name} loading="lazy" />
+                        </div>
+                        <p className="name">{product.name}</p>
+                        <p className="price">{formatPrice(product.price)}</p>
+                        {activeTopMenu === '베스트' && <p className="sales">판매 {salesByProduct[product.id] ?? 0}개</p>}
+                      </button>
+                    ))}
+                  </div>
 
-              {filteredProducts.length === 0 && <p className="empty-products">해당 메뉴에 표시할 상품이 없습니다.</p>}
+                  {filteredProducts.length === 0 && <p className="empty-products">해당 메뉴에 표시할 상품이 없습니다.</p>}
+                </>
+              )}
 
-              {selectedProduct && (
+              {isDetailOpen && selectedProduct && (
                 <article className="detail">
+                  <div className="detail-back-row">
+                    <button type="button" className="detail-back-btn" onClick={() => setIsDetailOpen(false)}>
+                      상품 목록으로
+                    </button>
+                  </div>
                   <div className="gallery">
                     <img className="main" src={currentImages[selectedImageIndex]} alt={selectedProduct.name} />
                     <div className="thumbs">
