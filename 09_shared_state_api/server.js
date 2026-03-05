@@ -11,6 +11,7 @@ const DATA_FILE = path.join(DATA_DIR, 'store.json')
 const TMP_FILE = path.join(DATA_DIR, 'store.json.tmp')
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json')
 const ORDERS_TMP_FILE = path.join(DATA_DIR, 'orders.json.tmp')
+const PAYMENT_CONFIG_FILE = path.join(DATA_DIR, 'payment-config.json')
 
 const defaultState = {
   config: {
@@ -81,6 +82,14 @@ const defaultState = {
   users: [{ id: 'demo', pw: '1234', name: '데모' }],
 }
 
+const defaultPaymentConfig = {
+  provider: 'mock',
+  toss: {
+    clientKey: '',
+    secretKey: '',
+  },
+}
+
 app.use(express.json({ limit: '1mb' }))
 
 const extractCreatedAtFromId = (id) => {
@@ -110,6 +119,34 @@ const normalizeState = (payload) => ({
   users: Array.isArray(payload?.users) && payload.users.length ? payload.users : defaultState.users,
 })
 
+const normalizePaymentConfig = (payload) => ({
+  provider: payload?.provider === 'toss' ? 'toss' : 'mock',
+  toss: {
+    clientKey: String(payload?.toss?.clientKey ?? '').trim(),
+    secretKey: String(payload?.toss?.secretKey ?? '').trim(),
+  },
+})
+
+const ensurePaymentConfigFile = async () => {
+  await fs.mkdir(DATA_DIR, { recursive: true })
+  try {
+    await fs.access(PAYMENT_CONFIG_FILE)
+  } catch {
+    await fs.writeFile(PAYMENT_CONFIG_FILE, JSON.stringify(defaultPaymentConfig, null, 2), 'utf8')
+  }
+}
+
+const readPaymentConfig = async () => {
+  await ensurePaymentConfigFile()
+  try {
+    const raw = await fs.readFile(PAYMENT_CONFIG_FILE, 'utf8')
+    const parsed = JSON.parse(raw)
+    return normalizePaymentConfig(parsed)
+  } catch {
+    return defaultPaymentConfig
+  }
+}
+
 const ensureOrdersFile = async () => {
   await fs.mkdir(DATA_DIR, { recursive: true })
   try {
@@ -137,6 +174,34 @@ const writeOrders = async (orders) => {
 
 const createOrderId = () => `o-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const createOrderNo = () => `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+
+const getTossBasicAuth = (secretKey) =>
+  `Basic ${Buffer.from(`${secretKey}:`, 'utf8').toString('base64')}`
+
+const confirmTossPayment = async ({ secretKey, paymentKey, orderId, amount }) => {
+  const response = await fetch('https://api.tosspayments.com/v1/payments/confirm', {
+    method: 'POST',
+    headers: {
+      Authorization: getTossBasicAuth(secretKey),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      paymentKey,
+      orderId,
+      amount: Math.floor(amount),
+    }),
+  })
+
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const message = data?.message || '토스 결제 승인에 실패했습니다.'
+    const code = data?.code || 'TOSS_CONFIRM_FAILED'
+    const error = new Error(message)
+    error.code = code
+    throw error
+  }
+  return data
+}
 
 const ensureDataFile = async () => {
   await fs.mkdir(DATA_DIR, { recursive: true })
@@ -187,6 +252,21 @@ app.put('/api/state', async (req, res) => {
   }
 })
 
+app.get('/api/payments/config', async (_req, res) => {
+  const paymentConfig = await readPaymentConfig()
+  const tossReady = Boolean(paymentConfig.toss.clientKey && paymentConfig.toss.secretKey)
+  const provider = paymentConfig.provider === 'toss' && tossReady ? 'toss' : 'mock'
+
+  res.json({
+    ok: true,
+    provider,
+    toss: {
+      clientKey: paymentConfig.toss.clientKey || '',
+      ready: tossReady,
+    },
+  })
+})
+
 app.post('/api/payments/checkout', async (req, res) => {
   const qty = Number(req.body?.qty)
   const amount = Number(req.body?.amount)
@@ -195,6 +275,8 @@ app.post('/api/payments/checkout', async (req, res) => {
   const paymentMethod = String(req.body?.paymentMethod ?? 'card').trim() || 'card'
   const userId = String(req.body?.userId ?? 'guest').trim() || 'guest'
   const userName = String(req.body?.userName ?? '게스트').trim() || '게스트'
+  const paymentKey = String(req.body?.paymentKey ?? '').trim()
+  const requestOrderId = String(req.body?.orderId ?? '').trim()
 
   if (!productId || !productName || !Number.isFinite(qty) || qty < 1 || !Number.isFinite(amount) || amount < 1) {
     res.status(400).json({ ok: false, message: '결제 요청 데이터가 올바르지 않습니다.' })
@@ -202,20 +284,55 @@ app.post('/api/payments/checkout', async (req, res) => {
   }
 
   try {
+    const paymentConfig = await readPaymentConfig()
+    const tossReady = Boolean(paymentConfig.toss.clientKey && paymentConfig.toss.secretKey)
+    const provider = paymentConfig.provider === 'toss' && tossReady ? 'toss' : 'mock'
     const orders = await readOrders()
-    const order = {
-      id: createOrderId(),
-      orderNo: createOrderNo(),
-      status: 'paid',
-      paidAt: new Date().toISOString(),
-      productId,
-      productName,
-      qty: Math.floor(qty),
-      amount: Math.floor(amount),
-      paymentMethod,
-      provider: 'mock',
-      userId,
-      userName,
+    let order
+
+    if (provider === 'toss') {
+      if (!paymentKey || !requestOrderId) {
+        res.status(400).json({ ok: false, message: '토스 결제 승인 정보가 누락되었습니다.' })
+        return
+      }
+
+      const tossPayment = await confirmTossPayment({
+        secretKey: paymentConfig.toss.secretKey,
+        paymentKey,
+        orderId: requestOrderId,
+        amount,
+      })
+
+      order = {
+        id: createOrderId(),
+        orderNo: String(tossPayment.orderId || requestOrderId || createOrderNo()),
+        status: 'paid',
+        paidAt: String(tossPayment.approvedAt || new Date().toISOString()),
+        productId,
+        productName,
+        qty: Math.floor(qty),
+        amount: Math.floor(Number(tossPayment.totalAmount || amount)),
+        paymentMethod,
+        provider: 'toss',
+        userId,
+        userName,
+        paymentKey,
+      }
+    } else {
+      order = {
+        id: createOrderId(),
+        orderNo: createOrderNo(),
+        status: 'paid',
+        paidAt: new Date().toISOString(),
+        productId,
+        productName,
+        qty: Math.floor(qty),
+        amount: Math.floor(amount),
+        paymentMethod,
+        provider: 'mock',
+        userId,
+        userName,
+      }
     }
 
     orders.unshift(order)
@@ -226,7 +343,11 @@ app.post('/api/payments/checkout', async (req, res) => {
       message: '결제가 완료되었습니다.',
       order,
     })
-  } catch {
+  } catch (error) {
+    if (error?.code) {
+      res.status(400).json({ ok: false, code: error.code, message: error.message })
+      return
+    }
     res.status(500).json({ ok: false, message: '결제 저장 처리에 실패했습니다.' })
   }
 })
@@ -243,7 +364,7 @@ app.get('/api/orders', async (req, res) => {
   }
 })
 
-Promise.all([ensureDataFile(), ensureOrdersFile()]).then(() => {
+Promise.all([ensureDataFile(), ensureOrdersFile(), ensurePaymentConfigFile()]).then(() => {
   app.listen(PORT, HOST, () => {
     console.log(`sopumshop-api listening on http://${HOST}:${PORT}`)
   })

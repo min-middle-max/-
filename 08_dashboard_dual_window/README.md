@@ -12,6 +12,7 @@
 - 우측 상단 로그인/회원가입 미니 패널
 - 상품 추가/수정/삭제 지원
 - 결제 버튼 클릭 시 `/api/payments/checkout`로 주문 저장 및 주문번호 표시
+: `payment-config.json`이 `toss`면 Toss 결제창, 아니면 Mock 결제
 - `Template Preview`(눈썹 텍스트) 대시보드에서 수정 가능
 
 ## 적용 방법

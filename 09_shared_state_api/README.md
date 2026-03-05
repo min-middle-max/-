@@ -4,8 +4,9 @@
 이 폴더는 서버 저장소(`/api/state`)를 추가해 여러 기기에서 동일 데이터를 보게 하고, 결제 버튼과 연결되는 주문 API를 제공합니다.
 
 ## 파일
-- `server.js`: Express API (`GET/PUT /api/state`, `POST /api/payments/checkout`, `GET /api/orders`)
+- `server.js`: Express API (`GET/PUT /api/state`, `GET /api/payments/config`, `POST /api/payments/checkout`, `GET /api/orders`)
 - `store.json`: 초기 데이터
+- `payment-config.json`: 결제 프로바이더 설정 (`mock` 또는 `toss`)
 - `sopumshop-api.service`: systemd 서비스
 - `nginx_api_location.conf`: nginx reverse proxy location 블록
 
@@ -16,4 +17,21 @@
 4. `sopumshop-api.service` 등록/시작
 5. nginx에 `/api/` 프록시 추가 후 reload
 6. 프런트엔드에서 `/api/state` 읽기/쓰기
-7. 프런트엔드 결제 버튼에서 `/api/payments/checkout` 호출
+7. `/srv/sopumshop/backend/data/payment-config.json`에 키 입력
+8. 프런트엔드 결제 버튼에서 `/api/payments/checkout` 호출
+
+## Toss 실결제 활성화
+`payment-config.json` 예시:
+
+```json
+{
+  "provider": "toss",
+  "toss": {
+    "clientKey": "live_ck_...",
+    "secretKey": "live_sk_..."
+  }
+}
+```
+
+- `provider`가 `toss`이고 두 키가 모두 있으면 실결제 모드
+- 키가 없거나 `provider`가 `mock`이면 테스트 모드

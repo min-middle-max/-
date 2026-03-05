@@ -608,6 +608,12 @@
   font-size: 0.82rem;
 }
 
+.pay-provider {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
 .pay-msg.ok {
   color: #1e6e46;
 }

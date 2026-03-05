@@ -3,6 +3,7 @@ import './App.css'
 
 const STORAGE_KEY = 'sopumshop-template-v3'
 const API_STATE_PATH = '/api/state'
+const API_PAYMENT_CONFIG_PATH = '/api/payments/config'
 const API_PAYMENT_CHECKOUT_PATH = '/api/payments/checkout'
 const NEW_BADGE_WINDOW_MS = 24 * 60 * 60 * 1000
 
@@ -75,6 +76,7 @@ const defaultProducts = [
 
 const defaultUsers = [{ id: 'demo', pw: '1234', name: '데모' }]
 const defaultPaymentStatus = { loading: false, message: '', error: false, orderNo: '' }
+const defaultPaymentConfig = { provider: 'mock', tossClientKey: '', tossReady: false }
 
 const createId = () => {
   const randomPart = Math.random().toString(36).slice(2, 8)
@@ -151,6 +153,7 @@ function App() {
   const [loginForm, setLoginForm] = useState({ id: '', pw: '' })
   const [signupForm, setSignupForm] = useState({ name: '', id: '', pw: '', pwConfirm: '' })
   const [paymentStatus, setPaymentStatus] = useState(defaultPaymentStatus)
+  const [paymentConfig, setPaymentConfig] = useState(defaultPaymentConfig)
 
   const [newMenuLabel, setNewMenuLabel] = useState('')
   const [editProductId, setEditProductId] = useState('')
@@ -170,6 +173,119 @@ function App() {
     image2: 'https://picsum.photos/seed/new-product-2/900/1100',
     image3: 'https://picsum.photos/seed/new-product-3/900/1100',
   })
+
+  useEffect(() => {
+    let active = true
+    const loadPaymentConfig = async () => {
+      try {
+        const response = await fetch(API_PAYMENT_CONFIG_PATH, { cache: 'no-store' })
+        const data = await response.json().catch(() => null)
+        if (!active || !response.ok || !data?.ok) return
+        setPaymentConfig({
+          provider: data.provider === 'toss' ? 'toss' : 'mock',
+          tossClientKey: String(data?.toss?.clientKey ?? '').trim(),
+          tossReady: Boolean(data?.toss?.ready),
+        })
+      } catch {
+        // keep mock fallback
+      }
+    }
+    loadPaymentConfig()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const paymentResult = params.get('paymentResult')
+    const paymentKey = params.get('paymentKey')
+    const orderId = params.get('orderId')
+    const amount = Number(params.get('amount'))
+
+    if (paymentResult === 'success' && paymentKey && orderId && Number.isFinite(amount)) {
+      const pendingRaw = sessionStorage.getItem(`pending-order:${orderId}`)
+      if (!pendingRaw) {
+        setPaymentStatus({
+          loading: false,
+          message: '결제 정보 확인에 실패했습니다. 다시 시도해 주세요.',
+          error: true,
+          orderNo: '',
+        })
+        window.history.replaceState({}, '', window.location.pathname)
+        return
+      }
+
+      let pending = null
+      try {
+        pending = JSON.parse(pendingRaw)
+      } catch {
+        pending = null
+      }
+
+      if (!pending?.productId || !pending?.productName || !pending?.qty || !pending?.amount) {
+        setPaymentStatus({
+          loading: false,
+          message: '결제 대기 정보가 손상되었습니다.',
+          error: true,
+          orderNo: '',
+        })
+        sessionStorage.removeItem(`pending-order:${orderId}`)
+        window.history.replaceState({}, '', window.location.pathname)
+        return
+      }
+
+      setPaymentStatus({
+        loading: true,
+        message: '결제 승인 확인 중...',
+        error: false,
+        orderNo: '',
+      })
+
+      fetch(API_PAYMENT_CHECKOUT_PATH, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...pending,
+          orderId,
+          paymentKey,
+        }),
+      })
+        .then(async (response) => {
+          const data = await response.json().catch(() => null)
+          if (!response.ok || !data?.ok) {
+            throw new Error(data?.message ?? '결제 승인 확인에 실패했습니다.')
+          }
+          setPaymentStatus({
+            loading: false,
+            message: `결제 완료 (${formatPrice(data.order?.amount ?? pending.amount)})`,
+            error: false,
+            orderNo: data.order?.orderNo ?? '',
+          })
+        })
+        .catch((error) => {
+          setPaymentStatus({
+            loading: false,
+            message: error?.message ?? '결제 승인 처리 중 오류가 발생했습니다.',
+            error: true,
+            orderNo: '',
+          })
+        })
+        .finally(() => {
+          sessionStorage.removeItem(`pending-order:${orderId}`)
+          window.history.replaceState({}, '', window.location.pathname)
+        })
+    } else if (paymentResult === 'fail') {
+      const failReason = params.get('message') || '결제가 취소되었거나 실패했습니다.'
+      setPaymentStatus({
+        loading: false,
+        message: failReason,
+        error: true,
+        orderNo: '',
+      })
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -465,19 +581,59 @@ function App() {
       orderNo: '',
     })
 
+    const checkoutPayload = {
+      productId: selectedProduct.id,
+      productName: selectedProduct.name,
+      qty,
+      amount: totalPrice,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      paymentMethod: 'card',
+    }
+
     try {
+      if (paymentConfig.provider === 'toss' && paymentConfig.tossReady && paymentConfig.tossClientKey) {
+        if (!window.TossPayments) {
+          await new Promise((resolve, reject) => {
+            const existing = document.querySelector('script[data-toss-sdk="1"]')
+            if (existing) {
+              existing.addEventListener('load', () => resolve())
+              existing.addEventListener('error', () => reject(new Error('토스 SDK 로드 실패')))
+              return
+            }
+
+            const script = document.createElement('script')
+            script.src = 'https://js.tosspayments.com/v1/payment'
+            script.async = true
+            script.dataset.tossSdk = '1'
+            script.onload = () => resolve()
+            script.onerror = () => reject(new Error('토스 SDK 로드 실패'))
+            document.head.appendChild(script)
+          })
+        }
+
+        const orderId = `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+        const successUrl = `${window.location.origin}${window.location.pathname}?paymentResult=success`
+        const failUrl = `${window.location.origin}${window.location.pathname}?paymentResult=fail`
+
+        sessionStorage.setItem(`pending-order:${orderId}`, JSON.stringify(checkoutPayload))
+
+        const tossPayments = window.TossPayments(paymentConfig.tossClientKey)
+        await tossPayments.requestPayment('카드', {
+          amount: totalPrice,
+          orderId,
+          orderName: `${selectedProduct.name} 외`,
+          customerName: currentUser.name,
+          successUrl,
+          failUrl,
+        })
+        return
+      }
+
       const response = await fetch(API_PAYMENT_CHECKOUT_PATH, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productId: selectedProduct.id,
-          productName: selectedProduct.name,
-          qty,
-          amount: totalPrice,
-          userId: currentUser.id,
-          userName: currentUser.name,
-          paymentMethod: 'card',
-        }),
+        body: JSON.stringify(checkoutPayload),
       })
 
       const data = await response.json().catch(() => null)
@@ -934,6 +1090,9 @@ function App() {
 
                 <div className="actions">
                   {currentUser && <p className="login-ok">로그인 상태: {currentUser.name}</p>}
+                  <p className="pay-provider">
+                    결제모드: {paymentConfig.provider === 'toss' ? 'Toss(실결제)' : 'Mock(테스트)'}
+                  </p>
                   {paymentStatus.message && (
                     <p className={`pay-msg ${paymentStatus.error ? 'error' : 'ok'}`}>
                       {paymentStatus.message}
