@@ -3,6 +3,7 @@ import './App.css'
 
 const STORAGE_KEY = 'sopumshop-template-v3'
 const API_STATE_PATH = '/api/state'
+const API_PAYMENT_CHECKOUT_PATH = '/api/payments/checkout'
 const NEW_BADGE_WINDOW_MS = 24 * 60 * 60 * 1000
 
 const defaultConfig = {
@@ -73,6 +74,7 @@ const defaultProducts = [
 ]
 
 const defaultUsers = [{ id: 'demo', pw: '1234', name: '데모' }]
+const defaultPaymentStatus = { loading: false, message: '', error: false, orderNo: '' }
 
 const createId = () => {
   const randomPart = Math.random().toString(36).slice(2, 8)
@@ -148,6 +150,7 @@ function App() {
   const [authMessage, setAuthMessage] = useState('')
   const [loginForm, setLoginForm] = useState({ id: '', pw: '' })
   const [signupForm, setSignupForm] = useState({ name: '', id: '', pw: '', pwConfirm: '' })
+  const [paymentStatus, setPaymentStatus] = useState(defaultPaymentStatus)
 
   const [newMenuLabel, setNewMenuLabel] = useState('')
   const [editProductId, setEditProductId] = useState('')
@@ -285,6 +288,7 @@ function App() {
   useEffect(() => {
     setSelectedImageIndex(0)
     setQty(1)
+    setPaymentStatus(defaultPaymentStatus)
   }, [selectedProductId])
 
   useEffect(() => {
@@ -380,6 +384,7 @@ function App() {
     setAuthMessage('')
     setLoginForm({ id: '', pw: '' })
     setSignupForm({ name: '', id: '', pw: '', pwConfirm: '' })
+    setPaymentStatus(defaultPaymentStatus)
     setActiveCategory('전체')
     setSelectedProductId(defaultProducts[0].id)
     setSelectedImageIndex(0)
@@ -435,6 +440,66 @@ function App() {
     setLoginForm({ id, pw: '' })
     setSignupForm({ name: '', id: '', pw: '', pwConfirm: '' })
     setAuthMessage('회원가입 완료! 로그인해 주세요.')
+  }
+
+  const handlePayment = async () => {
+    if (!selectedProduct) return
+
+    if (!currentUser) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      setAuthMessage('결제를 하려면 로그인해 주세요.')
+      setPaymentStatus({
+        loading: false,
+        message: '로그인 후 결제할 수 있습니다.',
+        error: true,
+        orderNo: '',
+      })
+      return
+    }
+
+    setPaymentStatus({
+      loading: true,
+      message: '결제 처리 중...',
+      error: false,
+      orderNo: '',
+    })
+
+    try {
+      const response = await fetch(API_PAYMENT_CHECKOUT_PATH, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: selectedProduct.id,
+          productName: selectedProduct.name,
+          qty,
+          amount: totalPrice,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          paymentMethod: 'card',
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.message ?? '결제 처리에 실패했습니다.')
+      }
+
+      setPaymentStatus({
+        loading: false,
+        message: `결제 완료 (${formatPrice(totalPrice)})`,
+        error: false,
+        orderNo: data.order?.orderNo ?? '',
+      })
+    } catch (error) {
+      setPaymentStatus({
+        loading: false,
+        message: error?.message ?? '결제 처리 중 오류가 발생했습니다.',
+        error: true,
+        orderNo: '',
+      })
+    }
   }
 
   const currentImages = selectedProduct
@@ -869,13 +934,20 @@ function App() {
 
                 <div className="actions">
                   {currentUser && <p className="login-ok">로그인 상태: {currentUser.name}</p>}
+                  {paymentStatus.message && (
+                    <p className={`pay-msg ${paymentStatus.error ? 'error' : 'ok'}`}>
+                      {paymentStatus.message}
+                      {paymentStatus.orderNo ? ` · 주문번호 ${paymentStatus.orderNo}` : ''}
+                    </p>
+                  )}
                   {config.showPayment && (
                     <button
                       type="button"
                       className="pay-btn"
-                      onClick={() => alert('결제 연동은 백엔드/PG 연동 단계에서 연결됩니다.')}
+                      disabled={paymentStatus.loading}
+                      onClick={handlePayment}
                     >
-                      결제하기
+                      {paymentStatus.loading ? '결제 처리중...' : '결제하기'}
                     </button>
                   )}
                 </div>

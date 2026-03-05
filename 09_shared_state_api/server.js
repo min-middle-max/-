@@ -9,6 +9,8 @@ const HOST = '127.0.0.1'
 const DATA_DIR = path.join(__dirname, 'data')
 const DATA_FILE = path.join(DATA_DIR, 'store.json')
 const TMP_FILE = path.join(DATA_DIR, 'store.json.tmp')
+const ORDERS_FILE = path.join(DATA_DIR, 'orders.json')
+const ORDERS_TMP_FILE = path.join(DATA_DIR, 'orders.json.tmp')
 
 const defaultState = {
   config: {
@@ -108,6 +110,34 @@ const normalizeState = (payload) => ({
   users: Array.isArray(payload?.users) && payload.users.length ? payload.users : defaultState.users,
 })
 
+const ensureOrdersFile = async () => {
+  await fs.mkdir(DATA_DIR, { recursive: true })
+  try {
+    await fs.access(ORDERS_FILE)
+  } catch {
+    await fs.writeFile(ORDERS_FILE, '[]', 'utf8')
+  }
+}
+
+const readOrders = async () => {
+  await ensureOrdersFile()
+  try {
+    const raw = await fs.readFile(ORDERS_FILE, 'utf8')
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const writeOrders = async (orders) => {
+  await fs.writeFile(ORDERS_TMP_FILE, JSON.stringify(orders, null, 2), 'utf8')
+  await fs.rename(ORDERS_TMP_FILE, ORDERS_FILE)
+}
+
+const createOrderId = () => `o-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+const createOrderNo = () => `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+
 const ensureDataFile = async () => {
   await fs.mkdir(DATA_DIR, { recursive: true })
   try {
@@ -157,7 +187,63 @@ app.put('/api/state', async (req, res) => {
   }
 })
 
-ensureDataFile().then(() => {
+app.post('/api/payments/checkout', async (req, res) => {
+  const qty = Number(req.body?.qty)
+  const amount = Number(req.body?.amount)
+  const productId = String(req.body?.productId ?? '').trim()
+  const productName = String(req.body?.productName ?? '').trim()
+  const paymentMethod = String(req.body?.paymentMethod ?? 'card').trim() || 'card'
+  const userId = String(req.body?.userId ?? 'guest').trim() || 'guest'
+  const userName = String(req.body?.userName ?? '게스트').trim() || '게스트'
+
+  if (!productId || !productName || !Number.isFinite(qty) || qty < 1 || !Number.isFinite(amount) || amount < 1) {
+    res.status(400).json({ ok: false, message: '결제 요청 데이터가 올바르지 않습니다.' })
+    return
+  }
+
+  try {
+    const orders = await readOrders()
+    const order = {
+      id: createOrderId(),
+      orderNo: createOrderNo(),
+      status: 'paid',
+      paidAt: new Date().toISOString(),
+      productId,
+      productName,
+      qty: Math.floor(qty),
+      amount: Math.floor(amount),
+      paymentMethod,
+      provider: 'mock',
+      userId,
+      userName,
+    }
+
+    orders.unshift(order)
+    await writeOrders(orders)
+
+    res.json({
+      ok: true,
+      message: '결제가 완료되었습니다.',
+      order,
+    })
+  } catch {
+    res.status(500).json({ ok: false, message: '결제 저장 처리에 실패했습니다.' })
+  }
+})
+
+app.get('/api/orders', async (req, res) => {
+  const limitRaw = Number(req.query?.limit)
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), 100) : 30
+
+  try {
+    const orders = await readOrders()
+    res.json({ ok: true, orders: orders.slice(0, limit) })
+  } catch {
+    res.status(500).json({ ok: false, message: '주문 목록 조회에 실패했습니다.' })
+  }
+})
+
+Promise.all([ensureDataFile(), ensureOrdersFile()]).then(() => {
   app.listen(PORT, HOST, () => {
     console.log(`sopumshop-api listening on http://${HOST}:${PORT}`)
   })
