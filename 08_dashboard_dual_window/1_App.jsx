@@ -3,6 +3,7 @@ import './App.css'
 
 const STORAGE_KEY = 'sopumshop-template-v3'
 const API_STATE_PATH = '/api/state'
+const NEW_BADGE_WINDOW_MS = 24 * 60 * 60 * 1000
 
 const defaultConfig = {
   brandName: 'Sopumshop',
@@ -79,6 +80,14 @@ const createId = () => {
 }
 
 const formatPrice = (price) => `${new Intl.NumberFormat('ko-KR').format(price)}원`
+
+const isRecentlyAdded = (createdAt) => {
+  if (!createdAt) return false
+  const createdAtMs = new Date(createdAt).getTime()
+  if (Number.isNaN(createdAtMs)) return false
+  const diff = Date.now() - createdAtMs
+  return diff >= 0 && diff < NEW_BADGE_WINDOW_MS
+}
 
 const normalizeState = (payload) => ({
   config: { ...defaultConfig, ...(payload?.config ?? {}) },
@@ -307,7 +316,7 @@ function App() {
       setActiveCategory(payload.category)
       setEditProductId('')
     } else {
-      const next = { id: createId(), ...payload }
+      const next = { id: createId(), createdAt: new Date().toISOString(), ...payload }
       setProducts((prev) => [next, ...prev])
       setSelectedProductId(next.id)
       setActiveCategory(next.category)
@@ -790,7 +799,10 @@ function App() {
                 className={`product-item ${selectedProduct?.id === product.id ? 'selected' : ''}`}
                 onClick={() => setSelectedProductId(product.id)}
               >
-                <img src={product.image} alt={product.name} loading="lazy" />
+                <div className="product-image-wrap">
+                  {isRecentlyAdded(product.createdAt) && <span className="new-ribbon">NEW</span>}
+                  <img src={product.image} alt={product.name} loading="lazy" />
+                </div>
                 <p className="name">{product.name}</p>
                 <p className="price">{formatPrice(product.price)}</p>
               </button>
