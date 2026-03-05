@@ -388,6 +388,7 @@
   display: grid;
   grid-template-columns: 180px 1fr 210px;
   gap: 0.7rem;
+  align-items: start;
 }
 
 .layout.no-left {
@@ -414,6 +415,8 @@
   display: grid;
   gap: 0.45rem;
   align-content: start;
+  align-self: start;
+  height: fit-content;
 }
 
 .sidebar h3 {
