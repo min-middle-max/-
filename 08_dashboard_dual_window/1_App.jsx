@@ -81,6 +81,17 @@ const createId = () => {
 
 const formatPrice = (price) => `${new Intl.NumberFormat('ko-KR').format(price)}원`
 
+const extractCreatedAtFromId = (id) => {
+  if (typeof id !== 'string') return ''
+  const match = /^p-(\d{13})-/.exec(id)
+  if (!match) return ''
+  const ms = Number(match[1])
+  if (!Number.isFinite(ms)) return ''
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString()
+}
+
 const isRecentlyAdded = (createdAt) => {
   if (!createdAt) return false
   const createdAtMs = new Date(createdAt).getTime()
@@ -89,11 +100,18 @@ const isRecentlyAdded = (createdAt) => {
   return diff >= 0 && diff < NEW_BADGE_WINDOW_MS
 }
 
+const normalizeProductsWithCreatedAt = (products = []) =>
+  products.map((product) => {
+    if (product.createdAt) return product
+    const fallback = extractCreatedAtFromId(product.id)
+    return fallback ? { ...product, createdAt: fallback } : product
+  })
+
 const normalizeState = (payload) => ({
   config: { ...defaultConfig, ...(payload?.config ?? {}) },
   products:
     Array.isArray(payload?.products) && payload.products.length
-      ? payload.products
+      ? normalizeProductsWithCreatedAt(payload.products)
       : defaultProducts,
   users: Array.isArray(payload?.users) && payload.users.length ? payload.users : defaultUsers,
 })

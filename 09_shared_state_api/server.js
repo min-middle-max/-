@@ -81,9 +81,30 @@ const defaultState = {
 
 app.use(express.json({ limit: '1mb' }))
 
+const extractCreatedAtFromId = (id) => {
+  if (typeof id !== 'string') return ''
+  const match = /^p-(\d{13})-/.exec(id)
+  if (!match) return ''
+  const ms = Number(match[1])
+  if (!Number.isFinite(ms)) return ''
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString()
+}
+
+const normalizeProductsWithCreatedAt = (products = []) =>
+  products.map((product) => {
+    if (product.createdAt) return product
+    const fallback = extractCreatedAtFromId(product.id)
+    return fallback ? { ...product, createdAt: fallback } : product
+  })
+
 const normalizeState = (payload) => ({
   config: { ...defaultState.config, ...(payload?.config ?? {}) },
-  products: Array.isArray(payload?.products) && payload.products.length ? payload.products : defaultState.products,
+  products:
+    Array.isArray(payload?.products) && payload.products.length
+      ? normalizeProductsWithCreatedAt(payload.products)
+      : defaultState.products,
   users: Array.isArray(payload?.users) && payload.users.length ? payload.users : defaultState.users,
 })
 
