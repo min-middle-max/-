@@ -5,6 +5,7 @@ const STORAGE_KEY = 'sopumshop-template-v3'
 const API_STATE_PATH = '/api/state'
 const API_PAYMENT_CONFIG_PATH = '/api/payments/config'
 const API_PAYMENT_CHECKOUT_PATH = '/api/payments/checkout'
+const API_ORDERS_PATH = '/api/orders?limit=300'
 const NEW_BADGE_WINDOW_MS = 24 * 60 * 60 * 1000
 
 const defaultConfig = {
@@ -16,7 +17,7 @@ const defaultConfig = {
   backgroundColor: '#f7f2ea',
   backgroundColor2: '#e8dece',
   showTopMenu: true,
-  topMenus: ['신상품', '베스트', '이벤트'],
+  topMenus: ['신상품', '베스트', '이벤트', '공지사항'],
   showLeftSidebar: true,
   showRightSidebar: true,
   rightSidebarTitle: '공지사항',
@@ -77,6 +78,13 @@ const defaultProducts = [
 const defaultUsers = [{ id: 'demo', pw: '1234', name: '데모' }]
 const defaultPaymentStatus = { loading: false, message: '', error: false, orderNo: '' }
 const defaultPaymentConfig = { provider: 'mock', tossClientKey: '', tossReady: false }
+const eventExample = {
+  title: '봄 신상 런칭 기념 이벤트',
+  period: '2026-03-05 ~ 2026-03-31',
+  summary: '한정 템플릿 구매 시 메인 배너 커스텀 1회 무료 적용',
+  detail:
+    '이벤트 기간 동안 템플릿 구매 후 문의를 남겨주시면 메인 배너 문구/색상 세팅을 무료로 도와드립니다.',
+}
 
 const createId = () => {
   const randomPart = Math.random().toString(36).slice(2, 8)
@@ -158,6 +166,8 @@ function App() {
   const [newMenuLabel, setNewMenuLabel] = useState('')
   const [editProductId, setEditProductId] = useState('')
 
+  const [activeTopMenu, setActiveTopMenu] = useState('전체')
+  const [salesByProduct, setSalesByProduct] = useState({})
   const [activeCategory, setActiveCategory] = useState('전체')
   const [selectedProductId, setSelectedProductId] = useState(initial.products[0]?.id ?? '')
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
@@ -289,6 +299,38 @@ function App() {
 
   useEffect(() => {
     let active = true
+    const loadOrders = async () => {
+      try {
+        const response = await fetch(API_ORDERS_PATH, { cache: 'no-store' })
+        if (!response.ok) return
+        const data = await response.json().catch(() => null)
+        if (!active || !data?.ok || !Array.isArray(data.orders)) return
+
+        const nextSales = {}
+        data.orders.forEach((order) => {
+          if (order?.status !== 'paid') return
+          const productId = String(order?.productId ?? '').trim()
+          if (!productId) return
+          const qtyValue = Number(order?.qty)
+          const qty = Number.isFinite(qtyValue) && qtyValue > 0 ? Math.floor(qtyValue) : 1
+          nextSales[productId] = (nextSales[productId] ?? 0) + qty
+        })
+        setSalesByProduct(nextSales)
+      } catch {
+        // ignore
+      }
+    }
+
+    loadOrders()
+    const intervalId = setInterval(loadOrders, 12000)
+    return () => {
+      active = false
+      clearInterval(intervalId)
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
 
     const hydrateFromApi = async () => {
       try {
@@ -381,19 +423,48 @@ function App() {
     return ['전체', ...unique]
   }, [products])
 
+  const topMenuItems = useMemo(() => {
+    const dedupMenus = Array.from(new Set(config.topMenus.filter(Boolean)))
+    return ['전체', ...dedupMenus]
+  }, [config.topMenus])
+
+  const topMenuProducts = useMemo(() => {
+    if (activeTopMenu === '신상품') {
+      return products.filter(
+        (product) =>
+          isRecentlyAdded(product.createdAt) || String(product.badge ?? '').toLowerCase().includes('new'),
+      )
+    }
+    if (activeTopMenu === '베스트') {
+      return [...products].sort((a, b) => {
+        const salesA = salesByProduct[a.id] ?? 0
+        const salesB = salesByProduct[b.id] ?? 0
+        if (salesB !== salesA) return salesB - salesA
+        return (b.price ?? 0) - (a.price ?? 0)
+      })
+    }
+    return products
+  }, [activeTopMenu, products, salesByProduct])
+
   const filteredProducts = useMemo(() => {
-    if (activeCategory === '전체') return products
-    return products.filter((p) => p.category === activeCategory)
-  }, [activeCategory, products])
+    if (activeCategory === '전체') return topMenuProducts
+    return topMenuProducts.filter((p) => p.category === activeCategory)
+  }, [activeCategory, topMenuProducts])
 
   const selectedProduct =
-    products.find((product) => product.id === selectedProductId) ?? filteredProducts[0] ?? null
+    filteredProducts.find((product) => product.id === selectedProductId) ?? filteredProducts[0] ?? null
 
   useEffect(() => {
     if (!categories.includes(activeCategory)) {
       setActiveCategory('전체')
     }
   }, [categories, activeCategory])
+
+  useEffect(() => {
+    if (!topMenuItems.includes(activeTopMenu)) {
+      setActiveTopMenu('전체')
+    }
+  }, [topMenuItems, activeTopMenu])
 
   useEffect(() => {
     if (!filteredProducts.some((p) => p.id === selectedProductId)) {
@@ -501,6 +572,7 @@ function App() {
     setLoginForm({ id: '', pw: '' })
     setSignupForm({ name: '', id: '', pw: '', pwConfirm: '' })
     setPaymentStatus(defaultPaymentStatus)
+    setActiveTopMenu('전체')
     setActiveCategory('전체')
     setSelectedProductId(defaultProducts[0].id)
     setSelectedImageIndex(0)
@@ -662,6 +734,9 @@ function App() {
     ? [selectedProduct.image, selectedProduct.image2, selectedProduct.image3].filter(Boolean)
     : []
 
+  const isEventMenu = activeTopMenu === '이벤트'
+  const isNoticeMenu = activeTopMenu === '공지사항'
+  const isProductMenu = !isEventMenu && !isNoticeMenu
   const totalPrice = selectedProduct ? selectedProduct.price * qty : 0
 
   const openDashboardWindow = () => {
@@ -879,10 +954,15 @@ function App() {
 
           {config.showTopMenu && (
             <nav>
-              {config.topMenus.map((menu) => (
-                <a key={menu} href="#">
+              {topMenuItems.map((menu) => (
+                <button
+                  key={menu}
+                  type="button"
+                  className={menu === activeTopMenu ? 'active' : ''}
+                  onClick={() => setActiveTopMenu(menu)}
+                >
                   {menu}
-                </a>
+                </button>
               ))}
             </nav>
           )}
@@ -999,8 +1079,12 @@ function App() {
         <p>{config.heroSubtitle}</p>
       </section>
 
-      <section className={`layout ${config.showLeftSidebar ? '' : 'no-left'} ${config.showRightSidebar ? '' : 'no-right'}`}>
-        {config.showLeftSidebar && (
+      <section
+        className={`layout ${config.showLeftSidebar ? '' : 'no-left'} ${config.showRightSidebar ? '' : 'no-right'} ${
+          isProductMenu ? '' : 'menu-page'
+        }`}
+      >
+        {config.showLeftSidebar && isProductMenu && (
           <aside className="sidebar left">
             <h3>카테고리</h3>
             {categories.map((category) => (
@@ -1017,92 +1101,118 @@ function App() {
         )}
 
         <main className="products-main">
-          <div className="products-grid">
-            {filteredProducts.map((product) => (
-              <button
-                key={product.id}
-                type="button"
-                className={`product-item ${selectedProduct?.id === product.id ? 'selected' : ''}`}
-                onClick={() => setSelectedProductId(product.id)}
-              >
-                <div className="product-image-wrap">
-                  {isRecentlyAdded(product.createdAt) && <span className="new-ribbon">NEW</span>}
-                  <img src={product.image} alt={product.name} loading="lazy" />
-                </div>
-                <p className="name">{product.name}</p>
-                <p className="price">{formatPrice(product.price)}</p>
-              </button>
-            ))}
-          </div>
-
-          {selectedProduct && (
-            <article className="detail">
-              <div className="gallery">
-                <img className="main" src={currentImages[selectedImageIndex]} alt={selectedProduct.name} />
-                <div className="thumbs">
-                  {currentImages.map((src, index) => (
-                    <button
-                      key={src}
-                      type="button"
-                      className={selectedImageIndex === index ? 'active' : ''}
-                      onClick={() => setSelectedImageIndex(index)}
-                    >
-                      <img src={src} alt={`${selectedProduct.name} ${index + 1}`} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="info">
-                <span className="badge">{selectedProduct.badge}</span>
-                <h2>{selectedProduct.name}</h2>
-                <p className="category">{selectedProduct.category}</p>
-                <p className="price strong">{formatPrice(selectedProduct.price)}</p>
-                <p className="desc">{selectedProduct.description}</p>
-
-                <div className="qty">
-                  <span>수량</span>
-                  <div>
-                    <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))}>
-                      -
-                    </button>
-                    <strong>{qty}</strong>
-                    <button type="button" onClick={() => setQty((q) => q + 1)}>
-                      +
-                    </button>
-                  </div>
-                </div>
-
-                <p className="total">총 금액: {formatPrice(totalPrice)}</p>
-
-                <div className="actions">
-                  {currentUser && <p className="login-ok">로그인 상태: {currentUser.name}</p>}
-                  <p className="pay-provider">
-                    결제모드: {paymentConfig.provider === 'toss' ? 'Toss(실결제)' : 'Mock(테스트)'}
-                  </p>
-                  {paymentStatus.message && (
-                    <p className={`pay-msg ${paymentStatus.error ? 'error' : 'ok'}`}>
-                      {paymentStatus.message}
-                      {paymentStatus.orderNo ? ` · 주문번호 ${paymentStatus.orderNo}` : ''}
-                    </p>
-                  )}
-                  {config.showPayment && (
-                    <button
-                      type="button"
-                      className="pay-btn"
-                      disabled={paymentStatus.loading}
-                      onClick={handlePayment}
-                    >
-                      {paymentStatus.loading ? '결제 처리중...' : '결제하기'}
-                    </button>
-                  )}
-                </div>
-              </div>
+          {isEventMenu && (
+            <article className="menu-article">
+              <p className="menu-kicker">EVENT</p>
+              <h2>{eventExample.title}</h2>
+              <p className="menu-period">기간: {eventExample.period}</p>
+              <p>{eventExample.summary}</p>
+              <p>{eventExample.detail}</p>
             </article>
+          )}
+
+          {isNoticeMenu && (
+            <article className="menu-article">
+              <p className="menu-kicker">{config.rightSidebarTitle}</p>
+              <h2>공지사항</h2>
+              <p className="menu-period">최종 업데이트: {new Date().toLocaleDateString('ko-KR')}</p>
+              <p className="menu-notice-text">{config.noticeText}</p>
+            </article>
+          )}
+
+          {isProductMenu && (
+            <>
+              <div className="products-grid">
+                {filteredProducts.map((product) => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    className={`product-item ${selectedProduct?.id === product.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedProductId(product.id)}
+                  >
+                    <div className="product-image-wrap">
+                      {isRecentlyAdded(product.createdAt) && <span className="new-ribbon">NEW</span>}
+                      <img src={product.image} alt={product.name} loading="lazy" />
+                    </div>
+                    <p className="name">{product.name}</p>
+                    <p className="price">{formatPrice(product.price)}</p>
+                    {activeTopMenu === '베스트' && <p className="sales">판매 {salesByProduct[product.id] ?? 0}개</p>}
+                  </button>
+                ))}
+              </div>
+
+              {filteredProducts.length === 0 && <p className="empty-products">해당 메뉴에 표시할 상품이 없습니다.</p>}
+
+              {selectedProduct && (
+                <article className="detail">
+                  <div className="gallery">
+                    <img className="main" src={currentImages[selectedImageIndex]} alt={selectedProduct.name} />
+                    <div className="thumbs">
+                      {currentImages.map((src, index) => (
+                        <button
+                          key={src}
+                          type="button"
+                          className={selectedImageIndex === index ? 'active' : ''}
+                          onClick={() => setSelectedImageIndex(index)}
+                        >
+                          <img src={src} alt={`${selectedProduct.name} ${index + 1}`} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="info">
+                    <span className="badge">{selectedProduct.badge}</span>
+                    <h2>{selectedProduct.name}</h2>
+                    <p className="category">{selectedProduct.category}</p>
+                    <p className="price strong">{formatPrice(selectedProduct.price)}</p>
+                    <p className="desc">{selectedProduct.description}</p>
+
+                    <div className="qty">
+                      <span>수량</span>
+                      <div>
+                        <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))}>
+                          -
+                        </button>
+                        <strong>{qty}</strong>
+                        <button type="button" onClick={() => setQty((q) => q + 1)}>
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    <p className="total">총 금액: {formatPrice(totalPrice)}</p>
+
+                    <div className="actions">
+                      {currentUser && <p className="login-ok">로그인 상태: {currentUser.name}</p>}
+                      <p className="pay-provider">
+                        결제모드: {paymentConfig.provider === 'toss' ? 'Toss(실결제)' : 'Mock(테스트)'}
+                      </p>
+                      {paymentStatus.message && (
+                        <p className={`pay-msg ${paymentStatus.error ? 'error' : 'ok'}`}>
+                          {paymentStatus.message}
+                          {paymentStatus.orderNo ? ` · 주문번호 ${paymentStatus.orderNo}` : ''}
+                        </p>
+                      )}
+                      {config.showPayment && (
+                        <button
+                          type="button"
+                          className="pay-btn"
+                          disabled={paymentStatus.loading}
+                          onClick={handlePayment}
+                        >
+                          {paymentStatus.loading ? '결제 처리중...' : '결제하기'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              )}
+            </>
           )}
         </main>
 
-        {config.showRightSidebar && (
+        {config.showRightSidebar && isProductMenu && (
           <aside className="sidebar right">
             <h3>{config.rightSidebarTitle}</h3>
             <p>{config.noticeText}</p>
