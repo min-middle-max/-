@@ -18,6 +18,7 @@ const defaultConfig = {
   backgroundColor2: '#e8dece',
   showTopMenu: true,
   topMenus: ['신상품', '베스트', '이벤트', '공지사항'],
+  customCategories: [],
   showLeftSidebar: true,
   showRightSidebar: true,
   rightSidebarTitle: '공지사항',
@@ -120,7 +121,11 @@ const normalizeProductsWithCreatedAt = (products = []) =>
   })
 
 const normalizeState = (payload) => ({
-  config: { ...defaultConfig, ...(payload?.config ?? {}) },
+  config: (() => {
+    const merged = { ...defaultConfig, ...(payload?.config ?? {}) }
+    if (!Array.isArray(merged.customCategories)) merged.customCategories = []
+    return merged
+  })(),
   products:
     Array.isArray(payload?.products) && payload.products.length
       ? normalizeProductsWithCreatedAt(payload.products)
@@ -164,6 +169,7 @@ function App() {
   const [paymentConfig, setPaymentConfig] = useState(defaultPaymentConfig)
 
   const [newMenuLabel, setNewMenuLabel] = useState('')
+  const [newCategoryLabel, setNewCategoryLabel] = useState('')
   const [editProductId, setEditProductId] = useState('')
 
   const [activeTopMenu, setActiveTopMenu] = useState('전체')
@@ -422,9 +428,11 @@ function App() {
   }, [dashboardMode])
 
   const categories = useMemo(() => {
-    const unique = Array.from(new Set(products.map((p) => p.category).filter(Boolean)))
+    const productCategories = products.map((p) => p.category).filter(Boolean)
+    const customCategories = Array.isArray(config.customCategories) ? config.customCategories.filter(Boolean) : []
+    const unique = Array.from(new Set([...customCategories, ...productCategories]))
     return ['전체', ...unique]
-  }, [products])
+  }, [products, config.customCategories])
 
   const topMenuItems = useMemo(() => {
     const dedupMenus = Array.from(new Set(config.topMenus.filter(Boolean)))
@@ -511,6 +519,31 @@ function App() {
 
   const removeTopMenu = (menuLabel) => {
     setConfig((prev) => ({ ...prev, topMenus: prev.topMenus.filter((m) => m !== menuLabel) }))
+  }
+
+  const addCategory = () => {
+    const value = newCategoryLabel.trim()
+    if (!value) return
+    if (categories.includes(value)) {
+      setNewCategoryLabel('')
+      return
+    }
+    setConfig((prev) => ({
+      ...prev,
+      customCategories: [...(Array.isArray(prev.customCategories) ? prev.customCategories : []), value],
+    }))
+    setNewCategoryLabel('')
+  }
+
+  const removeCategory = (categoryLabel) => {
+    setConfig((prev) => ({
+      ...prev,
+      customCategories: (Array.isArray(prev.customCategories) ? prev.customCategories : []).filter((c) => c !== categoryLabel),
+    }))
+    if (activeCategory === categoryLabel) {
+      setActiveCategory('전체')
+      setIsDetailOpen(false)
+    }
   }
 
   const addProduct = () => {
@@ -848,6 +881,37 @@ function App() {
                 }}
               />
               <button type="button" onClick={addTopMenu}>
+                추가
+              </button>
+            </div>
+          </label>
+        </div>
+
+        <div className="dash-card">
+          <h3>카테고리 관리</h3>
+          <p>상품이 없어도 먼저 카테고리를 추가할 수 있습니다.</p>
+          <div className="chip-list">
+            {(config.customCategories ?? []).map((category) => (
+              <button key={category} type="button" className="chip" onClick={() => removeCategory(category)}>
+                {category} ×
+              </button>
+            ))}
+          </div>
+          <label>
+            카테고리 추가
+            <div className="inline-row">
+              <input
+                placeholder="예: 키링"
+                value={newCategoryLabel}
+                onChange={(e) => setNewCategoryLabel(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    addCategory()
+                  }
+                }}
+              />
+              <button type="button" onClick={addCategory}>
                 추가
               </button>
             </div>
