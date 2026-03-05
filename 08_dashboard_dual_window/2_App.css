@@ -197,6 +197,8 @@
   background: #fff;
   padding: 1rem;
   min-height: max(calc(100vh - 2rem), 1400px);
+  display: flex;
+  flex-direction: column;
 }
 
 .store-header {
@@ -706,9 +708,10 @@
 }
 
 .store-footer {
-  margin-top: 1rem;
+  margin-top: auto;
   border-top: 1px solid var(--line);
   padding-top: 0.7rem;
+  padding-bottom: 0.2rem;
   display: flex;
   gap: 1rem;
   flex-wrap: wrap;
