@@ -11,6 +11,7 @@ Structure:
 - `06_landing_page_insideobject`: landing page source files (insideobject-style mood)
 - `07_category_menu_product_detail`: category menu + product detail UI source files
 - `08_dashboard_dual_window`: store/dashboard split-window template source files
+- `09_shared_state_api`: server-shared data API for PC/mobile sync
 
 Run scripts in order by folder and file name (`1_...`, `2_...`, ...).
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
 const STORAGE_KEY = 'sopumshop-template-v3'
+const API_STATE_PATH = '/api/state'
 
 const defaultConfig = {
   brandName: 'Sopumshop',
@@ -79,18 +80,23 @@ const createId = () => {
 
 const formatPrice = (price) => `${new Intl.NumberFormat('ko-KR').format(price)}원`
 
+const normalizeState = (payload) => ({
+  config: { ...defaultConfig, ...(payload?.config ?? {}) },
+  products:
+    Array.isArray(payload?.products) && payload.products.length
+      ? payload.products
+      : defaultProducts,
+  users: Array.isArray(payload?.users) && payload.users.length ? payload.users : defaultUsers,
+})
+
 const loadInitialState = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { config: defaultConfig, products: defaultProducts, users: defaultUsers }
+    if (!raw) return normalizeState()
     const parsed = JSON.parse(raw)
-    return {
-      config: { ...defaultConfig, ...(parsed.config ?? {}) },
-      products: Array.isArray(parsed.products) && parsed.products.length ? parsed.products : defaultProducts,
-      users: Array.isArray(parsed.users) && parsed.users.length ? parsed.users : defaultUsers,
-    }
+    return normalizeState(parsed)
   } catch {
-    return { config: defaultConfig, products: defaultProducts, users: defaultUsers }
+    return normalizeState()
   }
 }
 
@@ -106,6 +112,7 @@ function App() {
   const [config, setConfig] = useState(initial.config)
   const [products, setProducts] = useState(initial.products)
   const [users, setUsers] = useState(initial.users)
+  const [remoteReady, setRemoteReady] = useState(false)
 
   const [currentUser, setCurrentUser] = useState(null)
   const [authOpen, setAuthOpen] = useState(false)
@@ -134,8 +141,49 @@ function App() {
   })
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ config, products, users }))
-  }, [config, products, users])
+    let active = true
+
+    const hydrateFromApi = async () => {
+      try {
+        const response = await fetch(API_STATE_PATH, { cache: 'no-store' })
+        if (!response.ok) throw new Error('failed to load server state')
+        const next = normalizeState(await response.json())
+        if (!active) return
+        setConfig(next.config)
+        setProducts(next.products)
+        setUsers(next.users)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      } catch {
+        // keep local cache as fallback
+      } finally {
+        if (active) setRemoteReady(true)
+      }
+    }
+
+    hydrateFromApi()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const nextState = { config, products, users }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState))
+    if (!remoteReady) return
+
+    const timerId = setTimeout(() => {
+      fetch(API_STATE_PATH, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nextState),
+      }).catch(() => {
+        // ignore sync errors, keep local cache
+      })
+    }, 300)
+
+    return () => clearTimeout(timerId)
+  }, [config, products, users, remoteReady])
 
   useEffect(() => {
     const onStorage = (event) => {

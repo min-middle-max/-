@@ -1,0 +1,74 @@
+{
+  "config": {
+    "brandName": "Sopumshop",
+    "previewEyebrow": "Template Preview",
+    "heroTitle": "템플릿형 소품샵 스토어",
+    "heroSubtitle": "대시보드에서 메뉴/배경/사이드바/푸터/상품을 직접 수정하세요.",
+    "backgroundMode": "gradient",
+    "backgroundColor": "#f7f2ea",
+    "backgroundColor2": "#e8dece",
+    "showTopMenu": true,
+    "topMenus": ["신상품", "베스트", "이벤트"],
+    "showLeftSidebar": true,
+    "showRightSidebar": true,
+    "rightSidebarTitle": "공지사항",
+    "noticeText": "배송 지연 안내\n주말 주문은 월요일 순차 출고됩니다.",
+    "footerHomepage": "https://example.com",
+    "footerPhone": "02-1234-5678",
+    "showLogin": true,
+    "showPayment": true
+  },
+  "products": [
+    {
+      "id": "p-doll-1",
+      "name": "꿈결 토끼 인형",
+      "category": "인형",
+      "price": 32000,
+      "badge": "Best",
+      "description": "부드러운 패브릭 소재로 제작된 데일리 인형 소품입니다.",
+      "image": "https://picsum.photos/seed/doll-a/900/1100",
+      "image2": "https://picsum.photos/seed/doll-b/900/1100",
+      "image3": "https://picsum.photos/seed/doll-c/900/1100"
+    },
+    {
+      "id": "p-figure-1",
+      "name": "레트로 캣 피규어",
+      "category": "피규어",
+      "price": 45000,
+      "badge": "Hot",
+      "description": "선반 위 분위기를 살려주는 빈티지 무드 피규어입니다.",
+      "image": "https://picsum.photos/seed/figure-a/900/1100",
+      "image2": "https://picsum.photos/seed/figure-b/900/1100",
+      "image3": "https://picsum.photos/seed/figure-c/900/1100"
+    },
+    {
+      "id": "p-badge-1",
+      "name": "클라우드 메탈 뱃지",
+      "category": "뱃지",
+      "price": 9000,
+      "badge": "New",
+      "description": "가방/파우치에 포인트를 주기 좋은 메탈 뱃지입니다.",
+      "image": "https://picsum.photos/seed/badge-a/900/1100",
+      "image2": "https://picsum.photos/seed/badge-b/900/1100",
+      "image3": "https://picsum.photos/seed/badge-c/900/1100"
+    },
+    {
+      "id": "p-case-1",
+      "name": "투명 젤리 케이스",
+      "category": "케이스",
+      "price": 19000,
+      "badge": "MD Pick",
+      "description": "말랑한 그립감의 투명 젤리 타입 케이스입니다.",
+      "image": "https://picsum.photos/seed/case-a/900/1100",
+      "image2": "https://picsum.photos/seed/case-b/900/1100",
+      "image3": "https://picsum.photos/seed/case-c/900/1100"
+    }
+  ],
+  "users": [
+    {
+      "id": "demo",
+      "pw": "1234",
+      "name": "데모"
+    }
+  ]
+}
