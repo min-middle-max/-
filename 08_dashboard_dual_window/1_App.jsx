@@ -402,6 +402,8 @@ function App() {
   }, [remoteReady, dashboardMode])
 
   useEffect(() => {
+    if (dashboardMode) return
+
     const onStorage = (event) => {
       if (event.key !== STORAGE_KEY || !event.newValue) return
       try {
@@ -416,7 +418,7 @@ function App() {
 
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
-  }, [])
+  }, [dashboardMode])
 
   const categories = useMemo(() => {
     const unique = Array.from(new Set(products.map((p) => p.category).filter(Boolean)))
