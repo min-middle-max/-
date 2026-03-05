@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
 const STORAGE_KEY = 'sopumshop-template-v3'
@@ -113,6 +113,7 @@ function App() {
   const [products, setProducts] = useState(initial.products)
   const [users, setUsers] = useState(initial.users)
   const [remoteReady, setRemoteReady] = useState(false)
+  const lastServerStateRef = useRef('')
 
   const [currentUser, setCurrentUser] = useState(null)
   const [authOpen, setAuthOpen] = useState(false)
@@ -152,7 +153,9 @@ function App() {
         setConfig(next.config)
         setProducts(next.products)
         setUsers(next.users)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+        const serialized = JSON.stringify(next)
+        lastServerStateRef.current = serialized
+        localStorage.setItem(STORAGE_KEY, serialized)
       } catch {
         // keep local cache as fallback
       } finally {
@@ -169,7 +172,9 @@ function App() {
 
   useEffect(() => {
     const nextState = { config, products, users }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState))
+    const serialized = JSON.stringify(nextState)
+    lastServerStateRef.current = serialized
+    localStorage.setItem(STORAGE_KEY, serialized)
     if (!remoteReady) return
 
     const timerId = setTimeout(() => {
@@ -184,6 +189,29 @@ function App() {
 
     return () => clearTimeout(timerId)
   }, [config, products, users, remoteReady])
+
+  useEffect(() => {
+    if (!remoteReady || dashboardMode) return
+
+    const intervalId = setInterval(async () => {
+      try {
+        const response = await fetch(API_STATE_PATH, { cache: 'no-store' })
+        if (!response.ok) return
+        const next = normalizeState(await response.json())
+        const serialized = JSON.stringify(next)
+        if (serialized === lastServerStateRef.current) return
+        lastServerStateRef.current = serialized
+        setConfig(next.config)
+        setProducts(next.products)
+        setUsers(next.users)
+        localStorage.setItem(STORAGE_KEY, serialized)
+      } catch {
+        // ignore polling errors
+      }
+    }, 4000)
+
+    return () => clearInterval(intervalId)
+  }, [remoteReady, dashboardMode])
 
   useEffect(() => {
     const onStorage = (event) => {
