@@ -8,6 +8,7 @@ Structure:
 - `03_frontend_setup`: React + Vite scaffold, install, build
 - `04_nginx_deploy`: Nginx config + SELinux context + verify
 - `05_dev_run`: run dev server for frontend
+- `06_landing_page_insideobject`: landing page source files (insideobject-style mood)
 
 Run scripts in order by folder and file name (`1_...`, `2_...`, ...).
 
