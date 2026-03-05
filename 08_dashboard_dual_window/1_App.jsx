@@ -999,19 +999,6 @@ function App() {
         <p>{config.heroSubtitle}</p>
       </section>
 
-      <section className="category-bar">
-        {categories.map((category) => (
-          <button
-            key={category}
-            type="button"
-            className={category === activeCategory ? 'active' : ''}
-            onClick={() => setActiveCategory(category)}
-          >
-            {category}
-          </button>
-        ))}
-      </section>
-
       <section className={`layout ${config.showLeftSidebar ? '' : 'no-left'} ${config.showRightSidebar ? '' : 'no-right'}`}>
         {config.showLeftSidebar && (
           <aside className="sidebar left">
