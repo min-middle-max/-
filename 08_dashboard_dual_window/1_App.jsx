@@ -7,6 +7,7 @@ const API_PAYMENT_CONFIG_PATH = '/api/payments/config'
 const API_PAYMENT_CHECKOUT_PATH = '/api/payments/checkout'
 const API_ORDERS_PATH = '/api/orders?limit=300'
 const NEW_BADGE_WINDOW_MS = 24 * 60 * 60 * 1000
+const CORE_TOP_MENUS = ['장바구니']
 
 const defaultConfig = {
   brandName: 'Sopumshop',
@@ -124,6 +125,11 @@ const normalizeState = (payload) => ({
   config: (() => {
     const merged = { ...defaultConfig, ...(payload?.config ?? {}) }
     if (!Array.isArray(merged.customCategories)) merged.customCategories = []
+    const configuredMenus = Array.isArray(merged.topMenus) ? merged.topMenus.filter(Boolean) : []
+    CORE_TOP_MENUS.forEach((coreMenu) => {
+      if (!configuredMenus.includes(coreMenu)) configuredMenus.push(coreMenu)
+    })
+    merged.topMenus = configuredMenus
     return merged
   })(),
   products:
@@ -179,6 +185,8 @@ function App() {
   const [selectedProductId, setSelectedProductId] = useState(initial.products[0]?.id ?? '')
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [qty, setQty] = useState(1)
+  const [cartItems, setCartItems] = useState([])
+  const [cartMessage, setCartMessage] = useState('')
 
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -435,7 +443,8 @@ function App() {
   }, [products, config.customCategories])
 
   const topMenuItems = useMemo(() => {
-    const dedupMenus = Array.from(new Set(config.topMenus.filter(Boolean)))
+    const mergedMenus = [...config.topMenus, ...CORE_TOP_MENUS]
+    const dedupMenus = Array.from(new Set(mergedMenus.filter(Boolean)))
     return ['전체', ...dedupMenus]
   }, [config.topMenus])
 
@@ -495,6 +504,12 @@ function App() {
   }, [selectedProductId])
 
   useEffect(() => {
+    if (!cartMessage) return
+    const timerId = setTimeout(() => setCartMessage(''), 1800)
+    return () => clearTimeout(timerId)
+  }, [cartMessage])
+
+  useEffect(() => {
     if (!config.showLogin) {
       setAuthOpen(false)
       setCurrentUser(null)
@@ -518,6 +533,7 @@ function App() {
   }
 
   const removeTopMenu = (menuLabel) => {
+    if (CORE_TOP_MENUS.includes(menuLabel)) return
     setConfig((prev) => ({ ...prev, topMenus: prev.topMenus.filter((m) => m !== menuLabel) }))
   }
 
@@ -619,6 +635,8 @@ function App() {
     setSelectedProductId(defaultProducts[0].id)
     setSelectedImageIndex(0)
     setQty(1)
+    setCartItems([])
+    setCartMessage('')
   }
 
   const handleLogin = (event) => {
@@ -778,8 +796,45 @@ function App() {
 
   const isEventMenu = activeTopMenu === '이벤트'
   const isNoticeMenu = activeTopMenu === '공지사항'
-  const isProductMenu = !isEventMenu && !isNoticeMenu
+  const isCartMenu = activeTopMenu === '장바구니'
+  const isProductMenu = !isEventMenu && !isNoticeMenu && !isCartMenu
   const totalPrice = selectedProduct ? selectedProduct.price * qty : 0
+  const cartTotalPrice = cartItems.reduce((sum, item) => sum + item.price * item.qty, 0)
+  const cartTotalQty = cartItems.reduce((sum, item) => sum + item.qty, 0)
+
+  const addToCart = (product, quantity = 1) => {
+    if (!product) return
+    const nextQty = Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : 1
+    setCartItems((prev) => {
+      const existing = prev.find((item) => item.productId === product.id)
+      if (existing) {
+        return prev.map((item) =>
+          item.productId === product.id ? { ...item, qty: item.qty + nextQty } : item,
+        )
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          name: product.name,
+          category: product.category,
+          price: product.price,
+          image: product.image,
+          qty: nextQty,
+        },
+      ]
+    })
+    setCartMessage(`장바구니에 담았습니다 (${product.name})`)
+  }
+
+  const removeCartItem = (productId) => {
+    setCartItems((prev) => prev.filter((item) => item.productId !== productId))
+  }
+
+  const updateCartQty = (productId, nextQty) => {
+    const normalizedQty = Math.max(1, Math.floor(nextQty))
+    setCartItems((prev) => prev.map((item) => (item.productId === productId ? { ...item, qty: normalizedQty } : item)))
+  }
 
   const openDashboardWindow = () => {
     const url = `${window.location.origin}${window.location.pathname}?dashboard=1`
@@ -861,8 +916,15 @@ function App() {
           <h3>상단 메뉴 관리</h3>
           <div className="chip-list">
             {config.topMenus.map((menu) => (
-              <button key={menu} type="button" className="chip" onClick={() => removeTopMenu(menu)}>
-                {menu} ×
+              <button
+                key={menu}
+                type="button"
+                className="chip"
+                onClick={() => removeTopMenu(menu)}
+                disabled={CORE_TOP_MENUS.includes(menu)}
+                title={CORE_TOP_MENUS.includes(menu) ? '고정 메뉴입니다.' : '클릭하면 삭제'}
+              >
+                {CORE_TOP_MENUS.includes(menu) ? `${menu} (고정)` : `${menu} ×`}
               </button>
             ))}
           </div>
@@ -1037,7 +1099,7 @@ function App() {
                     setIsDetailOpen(false)
                   }}
                 >
-                  {menu}
+                  {menu === '장바구니' && cartTotalQty > 0 ? `장바구니 (${cartTotalQty})` : menu}
                 </button>
               ))}
             </nav>
@@ -1199,6 +1261,49 @@ function App() {
             </article>
           )}
 
+          {isCartMenu && (
+            <article className="menu-article cart-page">
+              <p className="menu-kicker">CART</p>
+              <h2>장바구니</h2>
+
+              {cartItems.length === 0 ? (
+                <p className="menu-notice-text">장바구니가 비어 있습니다.</p>
+              ) : (
+                <>
+                  <div className="cart-list">
+                    {cartItems.map((item) => (
+                      <div key={item.productId} className="cart-item">
+                        <img src={item.image} alt={item.name} />
+                        <div className="cart-item-info">
+                          <p className="cart-item-name">{item.name}</p>
+                          <p className="cart-item-meta">
+                            {item.category} · {formatPrice(item.price)}
+                          </p>
+                          <div className="cart-item-qty">
+                            <button type="button" onClick={() => updateCartQty(item.productId, item.qty - 1)}>
+                              -
+                            </button>
+                            <strong>{item.qty}</strong>
+                            <button type="button" onClick={() => updateCartQty(item.productId, item.qty + 1)}>
+                              +
+                            </button>
+                          </div>
+                        </div>
+                        <div className="cart-item-side">
+                          <p>{formatPrice(item.price * item.qty)}</p>
+                          <button type="button" onClick={() => removeCartItem(item.productId)}>
+                            삭제
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="cart-total">총 {cartTotalQty}개 · {formatPrice(cartTotalPrice)}</p>
+                </>
+              )}
+            </article>
+          )}
+
           {isProductMenu && (
             <>
               {!isDetailOpen && (
@@ -1276,6 +1381,7 @@ function App() {
 
                     <div className="actions">
                       {currentUser && <p className="login-ok">로그인 상태: {currentUser.name}</p>}
+                      {cartMessage && <p className="cart-msg">{cartMessage}</p>}
                       <p className="pay-provider">
                         결제모드: {paymentConfig.provider === 'toss' ? 'Toss(실결제)' : 'Mock(테스트)'}
                       </p>
@@ -1295,6 +1401,9 @@ function App() {
                           {paymentStatus.loading ? '결제 처리중...' : '결제하기'}
                         </button>
                       )}
+                      <button type="button" className="cart-btn" onClick={() => addToCart(selectedProduct, qty)}>
+                        장바구니 담기
+                      </button>
                     </div>
                   </div>
                 </article>
