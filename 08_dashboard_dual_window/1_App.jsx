@@ -187,6 +187,7 @@ function App() {
   const [qty, setQty] = useState(1)
   const [cartItems, setCartItems] = useState([])
   const [cartMessage, setCartMessage] = useState('')
+  const [activeBannerIndex, setActiveBannerIndex] = useState(0)
 
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -471,6 +472,21 @@ function App() {
     return topMenuProducts.filter((p) => p.category === activeCategory)
   }, [activeCategory, topMenuProducts])
 
+  const categorySections = useMemo(() => {
+    const categoryOrder = categories.filter((category) => category !== '전체')
+    const sections = categoryOrder.map((category) => ({
+      category,
+      items: topMenuProducts.filter((product) => product.category === category),
+    }))
+    if (activeCategory === '전체') return sections
+    return sections.filter((section) => section.category === activeCategory)
+  }, [categories, topMenuProducts, activeCategory])
+
+  const bannerProducts = useMemo(() => {
+    const source = topMenuProducts.length ? topMenuProducts : products
+    return source.slice(0, 5)
+  }, [topMenuProducts, products])
+
   const selectedProduct =
     filteredProducts.find((product) => product.id === selectedProductId) ?? filteredProducts[0] ?? null
 
@@ -508,6 +524,26 @@ function App() {
     const timerId = setTimeout(() => setCartMessage(''), 1800)
     return () => clearTimeout(timerId)
   }, [cartMessage])
+
+  useEffect(() => {
+    if (bannerProducts.length === 0) {
+      setActiveBannerIndex(0)
+      return
+    }
+    if (activeBannerIndex >= bannerProducts.length) {
+      setActiveBannerIndex(0)
+    }
+  }, [bannerProducts.length, activeBannerIndex])
+
+  useEffect(() => {
+    const isBannerVisible =
+      activeTopMenu !== '이벤트' && activeTopMenu !== '공지사항' && activeTopMenu !== '장바구니' && !isDetailOpen
+    if (!isBannerVisible || bannerProducts.length <= 1) return
+    const intervalId = setInterval(() => {
+      setActiveBannerIndex((prev) => (prev + 1) % bannerProducts.length)
+    }, 3800)
+    return () => clearInterval(intervalId)
+  }, [activeTopMenu, isDetailOpen, bannerProducts.length])
 
   useEffect(() => {
     if (!config.showLogin) {
@@ -1096,6 +1132,7 @@ function App() {
                   className={menu === activeTopMenu ? 'active' : ''}
                   onClick={() => {
                     setActiveTopMenu(menu)
+                    setActiveCategory('전체')
                     setIsDetailOpen(false)
                   }}
                 >
@@ -1218,30 +1255,11 @@ function App() {
       </section>
 
       <section
-        className={`layout ${config.showLeftSidebar ? '' : 'no-left'} ${config.showRightSidebar ? '' : 'no-right'} ${
-          isProductMenu ? '' : 'menu-page'
+        className={`layout no-left ${config.showRightSidebar && isProductMenu ? '' : 'no-right'} ${
+          isProductMenu ? 'home-layout' : 'menu-page'
         }`}
       >
-        {config.showLeftSidebar && isProductMenu && (
-          <aside className="sidebar left">
-            <h3>카테고리</h3>
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                className={category === activeCategory ? 'active' : ''}
-                onClick={() => {
-                  setActiveCategory(category)
-                  setIsDetailOpen(false)
-                }}
-              >
-                {category}
-              </button>
-            ))}
-          </aside>
-        )}
-
-        <main className="products-main">
+        <main className={`products-main ${isProductMenu ? 'home-main' : ''}`}>
           {isEventMenu && (
             <article className="menu-article">
               <p className="menu-kicker">EVENT</p>
@@ -1308,29 +1326,115 @@ function App() {
             <>
               {!isDetailOpen && (
                 <>
-                  <div className="products-grid">
-                    {filteredProducts.map((product) => (
+                  {bannerProducts.length > 0 && (
+                    <section className="promo-slider">
                       <button
-                        key={product.id}
                         type="button"
-                        className="product-item"
+                        className="promo-nav prev"
+                        onClick={() =>
+                          setActiveBannerIndex((prev) => (prev - 1 + bannerProducts.length) % bannerProducts.length)
+                        }
+                        aria-label="이전 배너"
+                      >
+                        ‹
+                      </button>
+                      <button
+                        type="button"
+                        className="promo-slide"
                         onClick={() => {
-                          setSelectedProductId(product.id)
+                          setSelectedProductId(bannerProducts[activeBannerIndex].id)
                           setIsDetailOpen(true)
                         }}
                       >
-                        <div className="product-image-wrap">
-                          {isRecentlyAdded(product.createdAt) && <span className="new-ribbon">NEW</span>}
-                          <img src={product.image} alt={product.name} loading="lazy" />
+                        <img
+                          src={bannerProducts[activeBannerIndex].image}
+                          alt={bannerProducts[activeBannerIndex].name}
+                          loading="lazy"
+                        />
+                        <div className="promo-copy">
+                          <p>Seasonal Pick</p>
+                          <h3>{bannerProducts[activeBannerIndex].name}</h3>
+                          <span>{bannerProducts[activeBannerIndex].category}</span>
                         </div>
-                        <p className="name">{product.name}</p>
-                        <p className="price">{formatPrice(product.price)}</p>
-                        {activeTopMenu === '베스트' && <p className="sales">판매 {salesByProduct[product.id] ?? 0}개</p>}
+                      </button>
+                      <button
+                        type="button"
+                        className="promo-nav next"
+                        onClick={() => setActiveBannerIndex((prev) => (prev + 1) % bannerProducts.length)}
+                        aria-label="다음 배너"
+                      >
+                        ›
+                      </button>
+                      <div className="promo-dots">
+                        {bannerProducts.map((product, index) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            className={index === activeBannerIndex ? 'active' : ''}
+                            onClick={() => setActiveBannerIndex(index)}
+                            aria-label={`배너 ${index + 1}`}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  <div className="category-bar shop-categories">
+                    {categories.map((category) => (
+                      <button
+                        key={category}
+                        type="button"
+                        className={category === activeCategory ? 'active' : ''}
+                        onClick={() => {
+                          setActiveCategory(category)
+                          setIsDetailOpen(false)
+                        }}
+                      >
+                        {category}
                       </button>
                     ))}
                   </div>
 
-                  {filteredProducts.length === 0 && <p className="empty-products">해당 메뉴에 표시할 상품이 없습니다.</p>}
+                  <div className="category-sections">
+                    {categorySections.map((section) => (
+                      <section key={section.category} className="category-section">
+                        <div className="category-section-head">
+                          <h3>{section.category}</h3>
+                          <span>{section.items.length} items</span>
+                        </div>
+
+                        {section.items.length > 0 ? (
+                          <div className="products-grid">
+                            {section.items.map((product) => (
+                              <button
+                                key={product.id}
+                                type="button"
+                                className="product-item"
+                                onClick={() => {
+                                  setSelectedProductId(product.id)
+                                  setIsDetailOpen(true)
+                                }}
+                              >
+                                <div className="product-image-wrap">
+                                  {isRecentlyAdded(product.createdAt) && <span className="new-ribbon">NEW</span>}
+                                  <img src={product.image} alt={product.name} loading="lazy" />
+                                </div>
+                                <p className="name">{product.name}</p>
+                                <p className="price">{formatPrice(product.price)}</p>
+                                {activeTopMenu === '베스트' && (
+                                  <p className="sales">판매 {salesByProduct[product.id] ?? 0}개</p>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="empty-products">등록된 상품이 없습니다.</p>
+                        )}
+                      </section>
+                    ))}
+                  </div>
+
+                  {categorySections.length === 0 && <p className="empty-products">표시할 카테고리가 없습니다.</p>}
                 </>
               )}
 
